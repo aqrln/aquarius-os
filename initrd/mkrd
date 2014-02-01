@@ -1,0 +1,56 @@
+#!/usr/bin/perl
+
+# mkrd -- initrd generator for Aquarius
+# Copyright (c) 2012 Alex Orlenko
+
+# Let's start
+
+open INITRD, ">initrd.asm" or die "Couldn't open initrd.asm!";
+
+print INITRD "
+; initrd.asm -- defines the initial ramdisk structure.
+; After assembling this file we get the initrd binary image.
+ 
+; This file was generated automatically with the mkrd utility
+
+"; # do we really need that ^ ???
+
+print INITRD "org 0\n\n"; # ensure that offsets are calculated correctly
+
+# Let's create the first header, which contain information about the initrdd
+print INITRD "db 'aqinitrd'\n"; # the signature -- 8 bytes
+print INITRD "dd nfiles\n";     # number of files
+print INITRD "dd 0\n\n";        # expand to 16 bytes -- size of a header
+
+# Magic number -- 4 bytes
+my $magic = "12345678h";
+
+# Generating headers
+for (my $i = 0; <files/*>; $i++) {
+	print INITRD "dd $magic\n";
+	print INITRD "dd file", $i, "_name\n";     # a POINTER
+	print INITRD "dd file", $i, "_image\n";    # a POINTER
+	print INITRD "dd file", $i, "_length\n\n"; # a VALUE
+}
+
+# Generating the body
+my $regexp = qr/.+\//; # we don't need to recompile the regexp every iteration
+my $i;                 # this variable is used after the loop
+for ($i = 0; <files/*>; $i++) {
+	my $filename = $_;
+	$filename =~ s/$regexp//; # remove the leading "files/" or whatever prefix
+	print INITRD "file", $i, "_name db '$filename', 0\n";
+	print INITRD "file", $i, "_image: incbin '$_'\n";
+	print INITRD "file", $i, "_length equ \$ - file$i", "_image\n\n";
+}
+
+# Number of files
+print INITRD "nfiles equ $i\n";
+
+# Close the file
+close INITRD;
+
+# And assemble it
+`nasm -fbin -o initrd initrd.asm`;
+
+# We did it! ;)
